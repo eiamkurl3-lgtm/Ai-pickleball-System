@@ -1,0 +1,24 @@
+## .NET build output
+bin/
+obj/
+
+## Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.DotSettings.user
+
+## User-specific and secret files
+appsettings.*.local.json
+secrets.json
+
+## Nested repo (tracked in its own remote)
+Skills/
+
+## OS / editor noise
+Thumbs.db
+.DS_Store
+*.swp

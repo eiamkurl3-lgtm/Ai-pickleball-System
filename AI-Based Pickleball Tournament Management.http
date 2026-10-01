@@ -1,0 +1,206 @@
+@host = http://localhost:5174
+@token = REPLACE_ME
+
+### Register a new user -> returns a JWT (username + password only)
+POST {{host}}/User/register
+Content-Type: application/json
+
+{
+  "username": "4tech0321",
+  "password": "Yamyam0924!"
+}
+
+###
+
+### Login -> returns a JWT (username + password)
+POST {{host}}/User/login
+Content-Type: application/json
+
+{
+  "username": "4tech0321",
+  "password": "Yamyam0924!"
+}
+
+###
+
+### Promote a user to admin (requires a token that already has the isadmin claim)
+POST {{host}}/User/MakeAdmin
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "username": "4tech0321"
+}
+
+###
+
+### Revoke admin (requires a token that already has the isadmin claim)
+POST {{host}}/User/RemoveAdmin
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "username": "4tech0321"
+}
+
+###
+
+GET {{host}}/weatherforecast/
+Accept: application/json
+
+###
+
+### ==========================================
+### Matches
+### Player ids below are existing rows in the Users table.
+### Query them with: SELECT Id, Email FROM Users;
+### ==========================================
+
+@player1 = 39b6ad5b-fdf3-482b-b000-b845d9ae3402
+@player2 = 894a0253-0804-4a66-a498-923317562c7c
+@player3 = d774691e-4cbb-463a-8f39-e1513a2445d3
+@tournamentId = 1
+
+### List matches (paged, cached)
+GET {{host}}/Match?page=1&recordsPerPage=10
+Accept: application/json
+
+###
+
+### List the matches of one tournament
+GET {{host}}/Match/tournament/{{tournamentId}}?page=1&recordsPerPage=10
+Accept: application/json
+
+###
+
+### Get a single match
+GET {{host}}/Match/1
+Accept: application/json
+
+###
+
+### Create a singles match
+POST {{host}}/Match
+Content-Type: application/json
+
+{
+  "tournamentId": {{tournamentId}},
+  "player1Id": "{{player1}}",
+  "player2Id": "{{player2}}",
+  "scheduledStart": "2026-10-01T09:00:00",
+  "court": "Court 1",
+  "status": "Scheduled"
+}
+
+###
+
+### Create a completed doubles match
+POST {{host}}/Match
+Content-Type: application/json
+
+{
+  "tournamentId": {{tournamentId}},
+  "player1Id": "{{player1}}",
+  "player2Id": "{{player2}}",
+  "player3Id": "{{player3}}",
+  "scheduledStart": "2026-10-01T11:00:00",
+  "court": "Court 2",
+  "status": "Completed",
+  "sideAScore": 21,
+  "sideBScore": 18,
+  "winnerSide": "A"
+}
+
+###
+
+### Update a match (requires an admin token)
+PUT {{host}}/Match/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "tournamentId": {{tournamentId}},
+  "player1Id": "{{player1}}",
+  "player2Id": "{{player2}}",
+  "scheduledStart": "2026-10-01T09:30:00",
+  "court": "Court 1",
+  "status": "InProgress"
+}
+
+###
+
+### Delete a match (requires an admin token)
+DELETE {{host}}/Match/1
+Authorization: Bearer {{token}}
+
+###
+
+### ==========================================
+### Players
+### UserId below is an existing row in the Users table.
+### Query them with: SELECT Id, Email FROM Users;
+### ==========================================
+
+@userId = 39b6ad5b-fdf3-482b-b000-b845d9ae3402
+
+### List players (paged, cached)
+GET {{host}}/Player?page=1&recordsPerPage=10
+Accept: application/json
+
+###
+
+### Get a single player
+GET {{host}}/Player/1
+Accept: application/json
+
+###
+
+### Get the player profile that belongs to a user
+GET {{host}}/Player/user/{{userId}}
+Accept: application/json
+
+###
+
+### Create a player profile (one per user, the user must already exist)
+POST {{host}}/Player
+Content-Type: application/json
+
+{
+  "userName": "Alex.Ramirez",
+  "dateOfBirth": "1991-04-18",
+  "skillLevel": 3.5,
+  "status": "Active"
+}
+
+###
+
+### Register that player for tournaments (replaces the whole set, requires an admin token)
+POST {{host}}/Player/1/assign-tournaments
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+[
+  1,
+  2
+]
+
+###
+
+### Update a player (requires an admin token)
+PUT {{host}}/Player/1
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "userName": "Alex.Ramirez",
+  "skillLevel": 3.7,
+  "status": "Active"
+}
+
+###
+
+### Delete a player (requires an admin token)
+DELETE {{host}}/Player/1
+Authorization: Bearer {{token}}
+
+###
