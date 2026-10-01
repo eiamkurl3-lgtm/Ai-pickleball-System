@@ -32,7 +32,7 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
 
             group.MapPut("/{id:int}", UpdateMatch)
                 //.RequireAuthorization("isadmin")
-                .AddEndpointFilter<ValidationFilter<CreateMatchDTO>>()
+                .AddEndpointFilter<ValidationFilter<UpdateMatchDTO>>()
                 .DisableAntiforgery();
 
             group.MapDelete("/{id:int}", DeleteMatch);
@@ -79,14 +79,16 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
             IOutputCacheStore outputCacheStore, IMatchRepository repository, ITournamentRepository tournamentRepository,
             UserManager<IdentityUser> userManager, IMapper mapper)
         {
-            var missingReferences = await FindMissingReferences(createMatchDTO, tournamentRepository, userManager);
+            var (playerIds, referenceErrors) = await ResolvePlayerIds(createMatchDTO, tournamentRepository, userManager);
 
-            if (missingReferences is not null)
+            if (referenceErrors is not null)
             {
-                return TypedResults.ValidationProblem(missingReferences);
+                return TypedResults.ValidationProblem(referenceErrors);
             }
 
             var match = mapper.Map<Match>(createMatchDTO);
+            match.Player1Id = playerIds.Player1Id;
+            match.Player2Id = playerIds.Player2Id;
             var id = await repository.Create(match);
             await EvictMatchCaches(outputCacheStore);
 
@@ -95,9 +97,9 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
             return TypedResults.Created($"/Match/{id}", matchDTO);
         }
 
-        static async Task<Results<NoContent, NotFound, ValidationProblem>> UpdateMatch(int id,
-            CreateMatchDTO updateMatchDTO, IMatchRepository repository, ITournamentRepository tournamentRepository,
-            UserManager<IdentityUser> userManager, IOutputCacheStore outputCacheStore, IMapper mapper)
+        static async Task<Results<NoContent, NotFound>> UpdateMatch(int id,
+            UpdateMatchDTO updateMatchDTO, IMatchRepository repository, IOutputCacheStore outputCacheStore,
+            IMapper mapper)
         {
             var matchDB = await repository.GetById(id);
 
@@ -106,15 +108,16 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
                 return TypedResults.NotFound();
             }
 
-            var missingReferences = await FindMissingReferences(updateMatchDTO, tournamentRepository, userManager);
-
-            if (missingReferences is not null)
-            {
-                return TypedResults.ValidationProblem(missingReferences);
-            }
-
+            // The payload only carries the result, so scheduling, opponents and the
+            // legacy court/winner columns are carried over from the stored match.
             var matchForUpdate = mapper.Map<Match>(updateMatchDTO);
             matchForUpdate.Id = id;
+            matchForUpdate.TournamentId = matchDB.TournamentId;
+            matchForUpdate.ScheduledStart = matchDB.ScheduledStart;
+            matchForUpdate.Player1Id = matchDB.Player1Id;
+            matchForUpdate.Player2Id = matchDB.Player2Id;
+            matchForUpdate.Court = matchDB.Court;
+            matchForUpdate.WinnerSide = matchDB.WinnerSide;
 
             await repository.Update(matchForUpdate);
             await EvictMatchCaches(outputCacheStore);
@@ -143,7 +146,9 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
             await outputCacheStore.EvictByTagAsync("matches-by-tournament", default);
         }
 
-        private static async Task<Dictionary<string, string[]>?> FindMissingReferences(
+        // A match must point at a real tournament, and both opponents are identified by
+        // username: the player ids are resolved from those names, never read off the body.
+        private static async Task<((string Player1Id, string Player2Id) PlayerIds, Dictionary<string, string[]>? Errors)> ResolvePlayerIds(
             CreateMatchDTO matchDTO, ITournamentRepository tournamentRepository, UserManager<IdentityUser> userManager)
         {
             var errors = new Dictionary<string, string[]>();
@@ -153,30 +158,26 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
                 errors["TournamentId"] = new[] { $"No tournament exists with id {matchDTO.TournamentId}" };
             }
 
-            var referencedPlayers = new Dictionary<string, string?>
+            var player1 = await userManager.FindByNameAsync(matchDTO.UserName);
+
+            if (player1 is null)
             {
-                ["Player1Id"] = matchDTO.Player1Id,
-                ["Player2Id"] = matchDTO.Player2Id,
-                ["Player3Id"] = matchDTO.Player3Id,
-                ["Player4Id"] = matchDTO.Player4Id
-            };
-
-            foreach (var (field, userId) in referencedPlayers)
-            {
-                if (string.IsNullOrEmpty(userId))
-                {
-                    continue;
-                }
-
-                var user = await userManager.FindByIdAsync(userId);
-
-                if (user is null)
-                {
-                    errors[field] = new[] { $"No user exists with id {userId}" };
-                }
+                errors["UserName"] = new[] { $"No user exists with username {matchDTO.UserName}" };
             }
 
-            return errors.Count == 0 ? null : errors;
+            var player2 = await userManager.FindByNameAsync(matchDTO.UserName2);
+
+            if (player2 is null)
+            {
+                errors["UserName2"] = new[] { $"No user exists with username {matchDTO.UserName2}" };
+            }
+
+            if (errors.Count > 0)
+            {
+                return ((string.Empty, string.Empty), errors);
+            }
+
+            return ((player1!.Id, player2!.Id), null);
         }
     }
 }

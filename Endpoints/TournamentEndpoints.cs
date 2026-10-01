@@ -26,6 +26,7 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
 
             group.MapPut("/{id:int}", UpdateTournament)
                 //.RequireAuthorization("isadmin")
+                .AddEndpointFilter<ValidationFilter<UpdateTournamentDTO>>()
                 .DisableAntiforgery();
 
             group.MapDelete("/{id:int}", DeleteTournament);
@@ -59,14 +60,14 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
         {
             var tournament = mapper.Map<Tournament>(createTournamentDTO);
             var id = await repository.Create(tournament);
-            await outputCacheStore.EvictByTagAsync("tournaments-get", default);
+            await EvictTournamentCaches(outputCacheStore);
 
             var tournamentDTO = mapper.Map<TournamentDTO>(tournament);
             return TypedResults.Created($"/Tournament/{id}", tournamentDTO);
         }
 
         static async Task<Results<NoContent, NotFound>> UpdateTournament(int id,
-            CreateTournamentDTO updateTournamentDTO, ITournamentRepository repository,
+            UpdateTournamentDTO updateTournamentDTO, ITournamentRepository repository,
             IOutputCacheStore outputCacheStore, IMapper mapper)
         {
             var tournamentDB = await repository.GetById(id);
@@ -76,11 +77,19 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
                 return TypedResults.NotFound();
             }
 
+            // The payload only carries the status, so the name and scheduling details
+            // are carried over from the stored tournament.
             var tournamentForUpdate = mapper.Map<Tournament>(updateTournamentDTO);
             tournamentForUpdate.Id = id;
+            tournamentForUpdate.Name = tournamentDB.Name;
+            tournamentForUpdate.StartDate = tournamentDB.StartDate;
+            tournamentForUpdate.EndDate = tournamentDB.EndDate;
+            tournamentForUpdate.Location = tournamentDB.Location;
+            tournamentForUpdate.EntryFee = tournamentDB.EntryFee;
+            tournamentForUpdate.MaxPlayers = tournamentDB.MaxPlayers;
 
             await repository.Update(tournamentForUpdate);
-            await outputCacheStore.EvictByTagAsync("tournaments-get", default);
+            await EvictTournamentCaches(outputCacheStore);
             return TypedResults.NoContent();
         }
 
@@ -95,8 +104,16 @@ namespace AI_Based_Pickleball_Tournament_Management.Endpoints
             }
 
             await repository.Delete(id);
-            await outputCacheStore.EvictByTagAsync("tournaments-get", default);
+            await EvictTournamentCaches(outputCacheStore);
             return TypedResults.NoContent();
+        }
+
+        // Every tag this group declares must go, otherwise GET /Tournament/{id}
+        // keeps serving a stale copy for the remainder of its 60s window.
+        private static async Task EvictTournamentCaches(IOutputCacheStore outputCacheStore)
+        {
+            await outputCacheStore.EvictByTagAsync("tournaments-get", default);
+            await outputCacheStore.EvictByTagAsync("tournament-get-by-id", default);
         }
     }
 }

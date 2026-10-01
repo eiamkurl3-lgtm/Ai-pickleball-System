@@ -12,19 +12,45 @@ CREATE TABLE Matches (
     -- SQL 2012 requires single-line inline PK constraint (multi-line parens rejected)
     Id INT PRIMARY KEY IDENTITY(1,1),
     TournamentId INT NOT NULL,
-    -- Side A = Player1 (+ Player2 when doubles), Side B = Player3 (+ Player4 when doubles)
+    -- Side A = Player1, Side B = Player2
     Player1Id NVARCHAR(450) NOT NULL,
     Player2Id NVARCHAR(450) NOT NULL,
-    Player3Id NVARCHAR(450) NULL,
-    Player4Id NVARCHAR(450) NULL,
     ScheduledStart DATETIME NOT NULL,
-    Court NVARCHAR(100) NULL,
     Status NVARCHAR(50) NULL,
     -- Aggregate points won by each side across the whole match
-    SideAScore INT NULL,
-    SideBScore INT NULL,
+    SideAScore INT NOT NULL,
+    SideBScore INT NOT NULL,
+    -- Retained for historical rows only: the create payload no longer carries them
+    Court NVARCHAR(100) NULL,
     WinnerSide NVARCHAR(1) NULL
 );
+GO
+
+-- ======================================
+-- Migration: singles-only model
+-- Drops the third and fourth player slots and tightens the scores
+-- so the non-nullable C# entity can always be materialised.
+-- ======================================
+IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Matches_Player3')
+    ALTER TABLE Matches DROP CONSTRAINT FK_Matches_Player3;
+GO
+IF EXISTS (SELECT * FROM sys.foreign_keys WHERE name = 'FK_Matches_Player4')
+    ALTER TABLE Matches DROP CONSTRAINT FK_Matches_Player4;
+GO
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Matches') AND name = 'Player3Id')
+    ALTER TABLE Matches DROP COLUMN Player3Id;
+GO
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Matches') AND name = 'Player4Id')
+    ALTER TABLE Matches DROP COLUMN Player4Id;
+GO
+IF EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('dbo.Matches') AND name = 'SideAScore' AND is_nullable = 1)
+BEGIN
+    UPDATE Matches SET SideAScore = 0 WHERE SideAScore IS NULL;
+    UPDATE Matches SET SideBScore = 0 WHERE SideBScore IS NULL;
+
+    ALTER TABLE Matches ALTER COLUMN SideAScore INT NOT NULL;
+    ALTER TABLE Matches ALTER COLUMN SideBScore INT NOT NULL;
+END
 GO
 
 IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='FK_Matches_Tournaments' AND xtype='F')
@@ -44,16 +70,6 @@ ALTER TABLE Matches WITH CHECK ADD CONSTRAINT FK_Matches_Player2
     FOREIGN KEY (Player2Id) REFERENCES Users (Id);
 GO
 
-IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='FK_Matches_Player3' AND xtype='F')
-ALTER TABLE Matches WITH CHECK ADD CONSTRAINT FK_Matches_Player3
-    FOREIGN KEY (Player3Id) REFERENCES Users (Id);
-GO
-
-IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='FK_Matches_Player4' AND xtype='F')
-ALTER TABLE Matches WITH CHECK ADD CONSTRAINT FK_Matches_Player4
-    FOREIGN KEY (Player4Id) REFERENCES Users (Id);
-GO
-
 -- ======================================
 -- Stored procedures
 -- ======================================
@@ -64,22 +80,20 @@ CREATE PROCEDURE Create_Match
     @TournamentId INT,
     @Player1Id NVARCHAR(450),
     @Player2Id NVARCHAR(450),
-    @Player3Id NVARCHAR(450),
-    @Player4Id NVARCHAR(450),
     @ScheduledStart DATETIME,
-    @Court NVARCHAR(100),
     @Status NVARCHAR(50),
     @SideAScore INT,
     @SideBScore INT,
+    @Court NVARCHAR(100),
     @WinnerSide NVARCHAR(1)
 AS
 BEGIN
     SET NOCOUNT ON;
 
-    INSERT INTO Matches (TournamentId, Player1Id, Player2Id, Player3Id, Player4Id,
-                         ScheduledStart, Court, Status, SideAScore, SideBScore, WinnerSide)
-    VALUES (@TournamentId, @Player1Id, @Player2Id, @Player3Id, @Player4Id,
-            @ScheduledStart, @Court, @Status, @SideAScore, @SideBScore, @WinnerSide);
+    INSERT INTO Matches (TournamentId, Player1Id, Player2Id,
+                         ScheduledStart, Status, SideAScore, SideBScore, Court, WinnerSide)
+    VALUES (@TournamentId, @Player1Id, @Player2Id,
+            @ScheduledStart, @Status, @SideAScore, @SideBScore, @Court, @WinnerSide);
 
     SELECT CAST(SCOPE_IDENTITY() AS INT);
 END;
@@ -110,17 +124,13 @@ BEGIN
     SET NOCOUNT ON;
 
     SELECT m.Id, m.TournamentId,
-           m.Player1Id, p1.Email AS Player1Email,
-           m.Player2Id, p2.Email AS Player2Email,
-           m.Player3Id, p3.Email AS Player3Email,
-           m.Player4Id, p4.Email AS Player4Email,
-           m.ScheduledStart, m.Court, m.Status,
-           m.SideAScore, m.SideBScore, m.WinnerSide
+           m.Player1Id, p1.UserName AS Player1UserName,
+           m.Player2Id, p2.UserName AS Player2UserName,
+           m.ScheduledStart, m.Status,
+           m.SideAScore, m.SideBScore, m.Court, m.WinnerSide
     FROM Matches m
     LEFT JOIN Users p1 ON p1.Id = m.Player1Id
     LEFT JOIN Users p2 ON p2.Id = m.Player2Id
-    LEFT JOIN Users p3 ON p3.Id = m.Player3Id
-    LEFT JOIN Users p4 ON p4.Id = m.Player4Id
     ORDER BY m.ScheduledStart, m.Id
     OFFSET (@Page - 1) * @RecordsPerPage ROWS
     FETCH NEXT @RecordsPerPage ROWS ONLY;
@@ -147,17 +157,13 @@ BEGIN
     SET NOCOUNT ON;
 
     SELECT m.Id, m.TournamentId,
-           m.Player1Id, p1.Email AS Player1Email,
-           m.Player2Id, p2.Email AS Player2Email,
-           m.Player3Id, p3.Email AS Player3Email,
-           m.Player4Id, p4.Email AS Player4Email,
-           m.ScheduledStart, m.Court, m.Status,
-           m.SideAScore, m.SideBScore, m.WinnerSide
+           m.Player1Id, p1.UserName AS Player1UserName,
+           m.Player2Id, p2.UserName AS Player2UserName,
+           m.ScheduledStart, m.Status,
+           m.SideAScore, m.SideBScore, m.Court, m.WinnerSide
     FROM Matches m
     LEFT JOIN Users p1 ON p1.Id = m.Player1Id
     LEFT JOIN Users p2 ON p2.Id = m.Player2Id
-    LEFT JOIN Users p3 ON p3.Id = m.Player3Id
-    LEFT JOIN Users p4 ON p4.Id = m.Player4Id
     WHERE m.Id = @Id;
 END;
 GO
@@ -173,17 +179,13 @@ BEGIN
     SET NOCOUNT ON;
 
     SELECT m.Id, m.TournamentId,
-           m.Player1Id, p1.Email AS Player1Email,
-           m.Player2Id, p2.Email AS Player2Email,
-           m.Player3Id, p3.Email AS Player3Email,
-           m.Player4Id, p4.Email AS Player4Email,
-           m.ScheduledStart, m.Court, m.Status,
-           m.SideAScore, m.SideBScore, m.WinnerSide
+           m.Player1Id, p1.UserName AS Player1UserName,
+           m.Player2Id, p2.UserName AS Player2UserName,
+           m.ScheduledStart, m.Status,
+           m.SideAScore, m.SideBScore, m.Court, m.WinnerSide
     FROM Matches m
     LEFT JOIN Users p1 ON p1.Id = m.Player1Id
     LEFT JOIN Users p2 ON p2.Id = m.Player2Id
-    LEFT JOIN Users p3 ON p3.Id = m.Player3Id
-    LEFT JOIN Users p4 ON p4.Id = m.Player4Id
     WHERE m.TournamentId = @TournamentId
     ORDER BY m.ScheduledStart, m.Id
     OFFSET (@Page - 1) * @RecordsPerPage ROWS
@@ -210,13 +212,11 @@ CREATE PROCEDURE Update_Match
     @TournamentId INT,
     @Player1Id NVARCHAR(450),
     @Player2Id NVARCHAR(450),
-    @Player3Id NVARCHAR(450),
-    @Player4Id NVARCHAR(450),
     @ScheduledStart DATETIME,
-    @Court NVARCHAR(100),
     @Status NVARCHAR(50),
     @SideAScore INT,
     @SideBScore INT,
+    @Court NVARCHAR(100),
     @WinnerSide NVARCHAR(1)
 AS
 BEGIN
@@ -227,13 +227,11 @@ BEGIN
         TournamentId = @TournamentId,
         Player1Id = @Player1Id,
         Player2Id = @Player2Id,
-        Player3Id = @Player3Id,
-        Player4Id = @Player4Id,
         ScheduledStart = @ScheduledStart,
-        Court = @Court,
         Status = @Status,
         SideAScore = @SideAScore,
         SideBScore = @SideBScore,
+        Court = @Court,
         WinnerSide = @WinnerSide
     WHERE Id = @Id;
 END;

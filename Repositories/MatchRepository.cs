@@ -26,13 +26,11 @@ namespace AI_Based_Pickleball_Tournament_Management.Repositories
                 match.TournamentId,
                 match.Player1Id,
                 match.Player2Id,
-                match.Player3Id,
-                match.Player4Id,
                 match.ScheduledStart,
-                match.Court,
                 match.Status,
                 match.SideAScore,
                 match.SideBScore,
+                match.Court,
                 match.WinnerSide
             }, commandType: CommandType.StoredProcedure);
 
@@ -102,13 +100,11 @@ namespace AI_Based_Pickleball_Tournament_Management.Repositories
                 match.TournamentId,
                 match.Player1Id,
                 match.Player2Id,
-                match.Player3Id,
-                match.Player4Id,
                 match.ScheduledStart,
-                match.Court,
                 match.Status,
                 match.SideAScore,
                 match.SideBScore,
+                match.Court,
                 match.WinnerSide
             }, commandType: CommandType.StoredProcedure);
         }
